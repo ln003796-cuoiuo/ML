@@ -1,0 +1,44 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main, build-installer-exe]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip pyinstaller pillow
+
+      - name: Prepare application icon
+        shell: pwsh
+        run: |
+          $bytes = [Convert]::FromBase64String((Get-Content assets/logo.jpg.b64 -Raw))
+          [IO.File]::WriteAllBytes("assets/logo.jpg", $bytes)
+          python -c "from PIL import Image; Image.open('assets/logo.jpg').convert('RGBA').save('assets/logo.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(32,32),(16,16)])"
+
+      - name: Build standalone EXE
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name ML-Installer --icon assets/logo.ico --add-data "minekryak.dll;." --add-data "vcruntime140_1.dll;." app.py
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: ML-Installer-Windows
+          path: dist/ML-Installer.exe
+          if-no-files-found: error
+          retention-days: 30
