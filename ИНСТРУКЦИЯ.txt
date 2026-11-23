@@ -1,0 +1,2 @@
+(Диск на который устоновлен майнкрафт)   XboxGames\Minecraft for Windows\Content Суда файл vcruntime140_1.dll
+WIN + R %appdata% (C:\Users\Admin\AppData\Roaming\Minecraft Bedrock) создать папку mods сюда minekryak.dll
