@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Minecraft Unlocker
 
 on:
   push:
@@ -31,12 +31,12 @@ jobs:
       - name: Build standalone EXE
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name ML-Installer --icon logo.ico --add-data "minekryak.dll;." --add-data "vcruntime140_1.dll;." app.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name Minecraft-Unlocker --icon logo.ico --version-file version_info.txt --add-data "minekryak.dll;." --add-data "vcruntime140_1.dll;." app.py
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
-          name: ML-Installer-Windows
-          path: dist/ML-Installer.exe
+          name: Minecraft-Unlocker-Windows
+          path: dist/Minecraft-Unlocker.exe
           if-no-files-found: error
           retention-days: 30
