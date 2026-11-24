@@ -6,124 +6,224 @@ import threading
 from pathlib import Path
 from datetime import datetime
 import tkinter as tk
-from tkinter import filedialog, messagebox
 
-APP_NAME = "ML Installer"
+APP_NAME = "Minecraft Unlocker"
+MINECRAFT_RELATIVE_PATH = Path("XboxGames") / "Minecraft for Windows" / "Content"
+APP_BACKGROUND = "#101010"
+PANEL_BACKGROUND = "#1c1c1c"
+TEXT_COLOR = "#f2f2f2"
+MUTED_COLOR = "#a7a7a7"
 
 def resource_path(name: str) -> Path:
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     return base / name
 
-def find_minecraft_content():
-    # Search all mounted drive letters for the exact XboxGames installation path.
+def available_drives():
+    drives = []
     for letter in string.ascii_uppercase:
         root = Path(f"{letter}:\\")
-        candidate = root / "XboxGames" / "Minecraft for Windows" / "Content"
+        try:
+            if root.is_dir():
+                drives.append(root)
+        except OSError:
+            continue
+    return drives
+
+def find_minecraft_content():
+    for drive in available_drives():
+        candidate = drive / MINECRAFT_RELATIVE_PATH
         try:
             if candidate.is_dir():
                 return candidate
         except OSError:
-            pass
-    return None
+            continue
+    drives = available_drives()
+    base = drives[0] if drives else Path("C:\\")
+    return base / MINECRAFT_RELATIVE_PATH
 
-def safe_copy(source: Path, destination: Path):
+def move_installer_file(source: Path, destination: Path):
     if not source.is_file():
-        raise FileNotFoundError(f"Не найден файл программы: {source.name}")
+        raise FileNotFoundError(f"В комплекте программы отсутствует файл: {source.name}")
+
     destination.parent.mkdir(parents=True, exist_ok=True)
+
     if destination.exists():
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         backup = destination.with_name(destination.name + f".backup-{stamp}")
         shutil.copy2(destination, backup)
-    shutil.copy2(source, destination)
-    if not destination.is_file() or destination.stat().st_size != source.stat().st_size:
-        raise OSError(f"Проверка копирования не пройдена: {destination}")
 
-class Installer:
+    shutil.move(str(source), str(destination))
+
+    if not destination.is_file():
+        raise OSError(f"Не удалось переместить файл: {destination.name}")
+
+class MinecraftUnlocker:
     def __init__(self, root):
         self.root = root
-        root.title("ML — Установщик")
-        root.geometry("560x410")
-        root.minsize(500, 380)
-        root.configure(bg="#101010")
-        root.option_add("*Font", ("Segoe UI", 10))
-
-        self.title = tk.Label(root, text="ML INSTALLER", bg="#101010", fg="white",
-                              font=("Segoe UI", 22, "bold"))
-        self.title.pack(pady=(24, 4))
-        tk.Label(root, text="Автоматическая установка файлов Minecraft Bedrock",
-                 bg="#101010", fg="#bdbdbd").pack(pady=(0, 18))
-
-        self.path_var = tk.StringVar(value="Поиск Minecraft...")
-        tk.Label(root, textvariable=self.path_var, bg="#1c1c1c", fg="#e8e8e8",
-                 wraplength=500, justify="left", padx=12, pady=12).pack(fill="x", padx=24)
-
-        tk.Button(root, text="Выбрать папку Content вручную", command=self.choose_folder,
-                  bg="#303030", fg="white", activebackground="#454545",
-                  activeforeground="white", relief="flat", padx=12, pady=9).pack(pady=12)
-
-        self.install_btn = tk.Button(root, text="УСТАНОВИТЬ", command=self.install,
-                                     bg="white", fg="black", activebackground="#dddddd",
-                                     relief="flat", font=("Segoe UI", 12, "bold"),
-                                     padx=28, pady=12)
-        self.install_btn.pack(pady=8)
-
-        self.status = tk.Label(root, text="Готово к установке", bg="#101010",
-                               fg="#9e9e9e", wraplength=500)
-        self.status.pack(pady=12)
-        tk.Label(root, text="При замене существующих файлов создаётся резервная копия.",
-                 bg="#101010", fg="#777777", font=("Segoe UI", 8)).pack(side="bottom", pady=12)
-
+        self.root.title(APP_NAME)
+        self.root.geometry("620x440")
+        self.root.minsize(540, 400)
+        self.root.configure(bg=APP_BACKGROUND)
+        self.root.option_add("*Font", ("Segoe UI", 10))
         self.content_dir = find_minecraft_content()
-        self.refresh_path()
+        self.render_path_confirmation()
 
-    def refresh_path(self):
-        if self.content_dir:
-            self.path_var.set(f"Папка Minecraft: {self.content_dir}")
-        else:
-            self.path_var.set("Папка Minecraft не найдена. Выберите папку Content вручную.")
+    def clear(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
 
-    def choose_folder(self):
-        selected = filedialog.askdirectory(title="Выберите папку Minecraft for Windows\\Content")
-        if selected:
-            p = Path(selected)
-            if p.name.lower() != "content" or not (p.parent / "Minecraft for Windows").exists():
-                if not messagebox.askyesno("Проверка пути", "Выбранная папка не похожа на Minecraft\\Content. Использовать её?"):
-                    return
-            self.content_dir = p
-            self.refresh_path()
+    def header(self):
+        tk.Label(
+            self.root, text="MINECRAFT UNLOCKER",
+            bg=APP_BACKGROUND, fg=TEXT_COLOR,
+            font=("Segoe UI", 21, "bold")
+        ).pack(pady=(28, 8))
+
+    def make_button(self, parent, text, command, primary=False):
+        return tk.Button(
+            parent, text=text, command=command,
+            bg="#ffffff" if primary else "#303030",
+            fg="#101010" if primary else "#ffffff",
+            activebackground="#dedede" if primary else "#454545",
+            activeforeground="#101010" if primary else "#ffffff",
+            relief="flat", bd=0, cursor="hand2",
+            font=("Segoe UI", 11, "bold" if primary else "normal"),
+            padx=22, pady=11
+        )
+
+    def render_path_confirmation(self):
+        self.clear()
+        self.header()
+        tk.Label(
+            self.root,
+            text="Правильно ли угадали путь установки Minecraft?",
+            bg=APP_BACKGROUND, fg=TEXT_COLOR,
+            font=("Segoe UI", 13, "bold"), wraplength=540
+        ).pack(pady=(26, 14))
+
+        path_panel = tk.Frame(self.root, bg=PANEL_BACKGROUND)
+        path_panel.pack(fill="x", padx=36, pady=8)
+        tk.Label(
+            path_panel, text=str(self.content_dir),
+            bg=PANEL_BACKGROUND, fg="#e8e8e8",
+            wraplength=510, justify="center",
+            padx=16, pady=18
+        ).pack(fill="x")
+
+        buttons = tk.Frame(self.root, bg=APP_BACKGROUND)
+        buttons.pack(pady=28)
+        self.make_button(buttons, "Да", self.confirm_path, True).pack(side="left", padx=8)
+        self.make_button(buttons, "Нет, изменить", self.render_drive_picker).pack(side="left", padx=8)
+
+        tk.Label(
+            self.root, text="Minecraft for Windows • Установка файлов",
+            bg=APP_BACKGROUND, fg="#777777",
+            font=("Segoe UI", 9)
+        ).pack(side="bottom", pady=18)
+
+    def render_drive_picker(self):
+        self.clear()
+        self.header()
+        tk.Label(
+            self.root, text="Выберите диск, на котором установлен Minecraft",
+            bg=APP_BACKGROUND, fg=TEXT_COLOR,
+            font=("Segoe UI", 12, "bold"), wraplength=540
+        ).pack(pady=(22, 18))
+
+        drives = available_drives()
+        if not drives:
+            tk.Label(
+                self.root, text="Не удалось обнаружить доступные диски Windows.",
+                bg=APP_BACKGROUND, fg="#ff9999"
+            ).pack(pady=20)
+            self.make_button(self.root, "Назад", self.render_path_confirmation).pack(pady=12)
+            return
+
+        grid = tk.Frame(self.root, bg=APP_BACKGROUND)
+        grid.pack(pady=8)
+        for index, drive in enumerate(drives):
+            button = self.make_button(
+                grid, f"Диск {drive.drive}",
+                lambda selected=drive: self.select_drive(selected)
+            )
+            button.grid(row=index // 3, column=index % 3, padx=7, pady=7, sticky="ew")
+
+        self.make_button(self.root, "Назад", self.render_path_confirmation).pack(pady=18)
+
+    def select_drive(self, drive):
+        self.content_dir = drive / MINECRAFT_RELATIVE_PATH
+        self.render_path_confirmation()
+
+    def confirm_path(self):
+        if not self.content_dir.is_dir():
+            self.show_error(
+                "Папка Minecraft по этому пути не найдена. "
+                "Нажмите «Нет, изменить» и выберите другой диск."
+            )
+            return
+        self.install()
 
     def install(self):
-        if not self.content_dir or not self.content_dir.is_dir():
-            messagebox.showwarning("Не найдена Minecraft", "Сначала выберите папку Content.")
-            return
-        self.install_btn.config(state="disabled")
-        self.status.config(text="Установка...", fg="#e0c46c")
-        threading.Thread(target=self._install_worker, daemon=True).start()
+        self.clear()
+        self.header()
+        self.status_label = tk.Label(
+            self.root, text="Разблокировка Minecraft...",
+            bg=APP_BACKGROUND, fg="#e0c46c",
+            font=("Segoe UI", 12)
+        )
+        self.status_label.pack(pady=45)
+        threading.Thread(target=self.install_worker, daemon=True).start()
 
-    def _install_worker(self):
+    def install_worker(self):
         try:
-            runtime = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-            mods_dir = runtime / "Minecraft Bedrock" / "mods"
-            safe_copy(resource_path("vcruntime140_1.dll"),
-                      self.content_dir / "vcruntime140_1.dll")
-            safe_copy(resource_path("minekryak.dll"), mods_dir / "minekryak.dll")
-            self.root.after(0, self._success, mods_dir)
+            appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+            mods_dir = appdata / "Minecraft Bedrock" / "mods"
+
+            # Create mods only when needed, then move the bundled DLL into it.
+            mods_dir.mkdir(parents=True, exist_ok=True)
+
+            move_installer_file(
+                resource_path("vcruntime140_1.dll"),
+                self.content_dir / "vcruntime140_1.dll"
+            )
+            move_installer_file(
+                resource_path("minekryak.dll"),
+                mods_dir / "minekryak.dll"
+            )
+            self.root.after(0, self.show_success)
         except Exception as exc:
-            self.root.after(0, self._failure, str(exc))
+            self.root.after(0, self.show_error, str(exc))
 
-    def _success(self, mods_dir):
-        self.install_btn.config(state="normal")
-        self.status.config(text="Установка завершена. Оба файла скопированы и проверены.", fg="#8bd49b")
-        messagebox.showinfo("Готово", "Файлы установлены.\n\n"
-                           f"vcruntime140_1.dll → {self.content_dir}\n"
-                           f"minekryak.dll → {mods_dir}")
+    def show_success(self):
+        self.clear()
+        self.header()
+        tk.Label(
+            self.root, text="Minecraft активирован.",
+            bg=APP_BACKGROUND, fg="#8bd49b",
+            font=("Segoe UI", 20, "bold")
+        ).pack(expand=True)
+        tk.Label(
+            self.root, text="Все файлы успешно перемещены.",
+            bg=APP_BACKGROUND, fg=MUTED_COLOR,
+            font=("Segoe UI", 10)
+        ).pack(pady=(0, 54))
 
-    def _failure(self, error):
-        self.install_btn.config(state="normal")
-        self.status.config(text="Ошибка установки", fg="#ff8585")
-        messagebox.showerror("Ошибка", error + "\n\nЕсли доступ запрещён, запустите EXE от имени администратора.")
+    def show_error(self, message):
+        self.clear()
+        self.header()
+        tk.Label(
+            self.root, text="Не удалось завершить установку",
+            bg=APP_BACKGROUND, fg="#ff8585",
+            font=("Segoe UI", 14, "bold")
+        ).pack(pady=(26, 12))
+        tk.Label(
+            self.root, text=message,
+            bg=APP_BACKGROUND, fg=TEXT_COLOR,
+            wraplength=530, justify="center"
+        ).pack(padx=32, pady=10)
+        self.make_button(self.root, "Вернуться к выбору диска", self.render_drive_picker).pack(pady=22)
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    Installer(root)
-    root.mainloop()
+    window = tk.Tk()
+    MinecraftUnlocker(window)
+    window.mainloop()
