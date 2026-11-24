@@ -274,9 +274,37 @@ class MinecraftUnlocker:
         self.repair_button.pack(pady=(0, 28))
 
     def repair_installation(self):
-        # The button is a repair/reinstall action, not a dead-end navigation.
-        self.repair_button.config(state="disabled", text="Проверяем и исправляем...")
-        threading.Thread(target=self.install_worker, daemon=True).start()
+        # Remove only the two exact files managed by this installer, then return
+        # to the initial path-confirmation screen.
+        self.repair_button.config(state="disabled", text="Удаляем установленные файлы...")
+        threading.Thread(target=self.remove_installed_files_worker, daemon=True).start()
+
+    def remove_installed_files_worker(self):
+        try:
+            runtime_file, mod_file = installed_targets(self.content_dir)
+            for target in (runtime_file, mod_file):
+                if target.is_file():
+                    # If this installer made a backup before replacing an existing
+                    # file, restore the newest backup rather than destroying it.
+                    backups = sorted(
+                        target.parent.glob(target.name + ".backup-*"),
+                        key=lambda item: item.stat().st_mtime,
+                        reverse=True
+                    )
+                    if backups:
+                        os.replace(backups[0], target)
+                    else:
+                        target.unlink()
+
+            # Verify that no installer-managed target remains newly installed.
+            runtime_file, mod_file = installed_targets(self.content_dir)
+            remaining = [str(p) for p in (runtime_file, mod_file) if p.is_file()]
+            if remaining:
+                raise OSError("Не удалось удалить файлы: " + ", ".join(remaining))
+
+            self.root.after(0, self.render_path_confirmation)
+        except Exception as exc:
+            self.root.after(0, self.show_error, f"Не удалось удалить файлы: {exc}")
 
     def show_error(self, message):
         self.clear()
