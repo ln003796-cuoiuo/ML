@@ -2,6 +2,7 @@ import os
 import sys
 import shutil
 import string
+import tempfile
 import threading
 from pathlib import Path
 from datetime import datetime
@@ -41,7 +42,21 @@ def find_minecraft_content():
     base = drives[0] if drives else Path("C:\\")
     return base / MINECRAFT_RELATIVE_PATH
 
-def move_installer_file(source: Path, destination: Path):
+def installed_targets(content_dir: Path):
+    appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+    mods_dir = appdata / "Minecraft Bedrock" / "mods"
+    runtime_file = content_dir / "vcruntime140_1.dll"
+    mod_file = mods_dir / "minekryak.dll"
+    return runtime_file, mod_file
+
+def is_fully_installed(content_dir: Path) -> bool:
+    try:
+        runtime_file, mod_file = installed_targets(content_dir)
+        return runtime_file.is_file() and mod_file.is_file()
+    except OSError:
+        return False
+
+def move_bundled_file(source: Path, destination: Path):
     if not source.is_file():
         raise FileNotFoundError(f"В комплекте программы отсутствует файл: {source.name}")
 
@@ -52,10 +67,14 @@ def move_installer_file(source: Path, destination: Path):
         backup = destination.with_name(destination.name + f".backup-{stamp}")
         shutil.copy2(destination, backup)
 
-    shutil.move(str(source), str(destination))
+    # Stage a fresh copy so the bundled source remains available for retry/reinstall.
+    with tempfile.TemporaryDirectory(prefix="minecraft-unlocker-") as temp_dir:
+        staged_file = Path(temp_dir) / source.name
+        shutil.copy2(source, staged_file)
+        shutil.move(str(staged_file), str(destination))
 
-    if not destination.is_file():
-        raise OSError(f"Не удалось переместить файл: {destination.name}")
+    if not destination.is_file() or destination.stat().st_size == 0:
+        raise OSError(f"Не удалось проверить установленный файл: {destination.name}")
 
 class MinecraftUnlocker:
     def __init__(self, root):
@@ -65,8 +84,18 @@ class MinecraftUnlocker:
         self.root.minsize(540, 400)
         self.root.configure(bg=APP_BACKGROUND)
         self.root.option_add("*Font", ("Segoe UI", 10))
+        try:
+            self.root.iconbitmap(default=str(resource_path("logo.ico")))
+        except Exception:
+            pass
+
         self.content_dir = find_minecraft_content()
-        self.render_path_confirmation()
+
+        # First-run check: if both target files already exist, skip the installer flow.
+        if is_fully_installed(self.content_dir):
+            self.render_installed()
+        else:
+            self.render_path_confirmation()
 
     def clear(self):
         for widget in self.root.winfo_children():
@@ -151,17 +180,23 @@ class MinecraftUnlocker:
         self.make_button(self.root, "Назад", self.render_path_confirmation).pack(pady=18)
 
     def select_drive(self, drive):
+        # User selects a drive only; Content is resolved automatically from the known relative path.
         self.content_dir = drive / MINECRAFT_RELATIVE_PATH
         self.confirm_path()
 
     def confirm_path(self):
         if not self.content_dir.is_dir():
             self.show_error(
-                "Папка Minecraft по этому пути не найдена. "
-                "Нажмите «Вернуться к выбору диска» и выберите другой диск."
+                f"На диске {self.content_dir.drive} не найдена папка "
+                "XboxGames\\Minecraft for Windows\\Content. "
+                "Вернитесь и выберите другой диск."
             )
             return
-        self.render_unlock_screen()
+
+        if is_fully_installed(self.content_dir):
+            self.render_installed()
+        else:
+            self.render_unlock_screen()
 
     def render_unlock_screen(self):
         self.clear()
@@ -186,47 +221,46 @@ class MinecraftUnlocker:
     def install(self):
         self.clear()
         self.header()
-        self.status_label = tk.Label(
-            self.root, text="Перемещение файлов...",
+        tk.Label(
+            self.root, text="Установка файлов...",
             bg=APP_BACKGROUND, fg="#e0c46c",
             font=("Segoe UI", 12)
-        )
-        self.status_label.pack(pady=45)
+        ).pack(pady=45)
         threading.Thread(target=self.install_worker, daemon=True).start()
 
     def install_worker(self):
         try:
-            appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-            mods_dir = appdata / "Minecraft Bedrock" / "mods"
-
-            # Create mods only when needed, then move the bundled DLL into it.
+            runtime_file, mod_file = installed_targets(self.content_dir)
+            mods_dir = mod_file.parent
             mods_dir.mkdir(parents=True, exist_ok=True)
 
-            move_installer_file(
-                resource_path("vcruntime140_1.dll"),
-                self.content_dir / "vcruntime140_1.dll"
-            )
-            move_installer_file(
-                resource_path("minekryak.dll"),
-                mods_dir / "minekryak.dll"
-            )
-            self.root.after(0, self.show_success)
+            move_bundled_file(resource_path("vcruntime140_1.dll"), runtime_file)
+            move_bundled_file(resource_path("minekryak.dll"), mod_file)
+
+            # Verify both destinations before displaying the installed screen.
+            if not runtime_file.is_file() or not mod_file.is_file():
+                raise OSError("Проверка завершения установки не пройдена: не все файлы найдены.")
+
+            self.root.after(0, self.render_installed)
         except Exception as exc:
             self.root.after(0, self.show_error, str(exc))
 
-    def show_success(self):
+    def render_installed(self):
         self.clear()
         self.header()
         tk.Label(
-            self.root, text="Minecraft активирован.",
+            self.root, text="Minecraft установлен",
             bg=APP_BACKGROUND, fg="#8bd49b",
             font=("Segoe UI", 20, "bold")
         ).pack(expand=True)
         tk.Label(
-            self.root, text="Все файлы успешно перемещены.",
+            self.root, text="Оба необходимых файла найдены в нужных папках.",
             bg=APP_BACKGROUND, fg=MUTED_COLOR,
             font=("Segoe UI", 10)
-        ).pack(pady=(0, 54))
+        ).pack(pady=(0, 18))
+        self.make_button(
+            self.root, "Произошла ошибка", self.install, False
+        ).pack(pady=(0, 28))
 
     def show_error(self, message):
         self.clear()
@@ -241,7 +275,12 @@ class MinecraftUnlocker:
             bg=APP_BACKGROUND, fg=TEXT_COLOR,
             wraplength=530, justify="center"
         ).pack(padx=32, pady=10)
-        self.make_button(self.root, "Вернуться к выбору диска", self.render_drive_picker).pack(pady=22)
+        self.make_button(
+            self.root, "Повторить установку", self.install, True
+        ).pack(pady=12)
+        self.make_button(
+            self.root, "Вернуться к выбору диска", self.render_drive_picker
+        ).pack(pady=4)
 
 if __name__ == "__main__":
     window = tk.Tk()
