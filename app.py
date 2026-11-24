@@ -152,22 +152,42 @@ class MinecraftUnlocker:
 
     def select_drive(self, drive):
         self.content_dir = drive / MINECRAFT_RELATIVE_PATH
-        self.render_path_confirmation()
+        self.confirm_path()
 
     def confirm_path(self):
         if not self.content_dir.is_dir():
             self.show_error(
                 "Папка Minecraft по этому пути не найдена. "
-                "Нажмите «Нет, изменить» и выберите другой диск."
+                "Нажмите «Вернуться к выбору диска» и выберите другой диск."
             )
             return
-        self.install()
+        self.render_unlock_screen()
+
+    def render_unlock_screen(self):
+        self.clear()
+        self.header()
+        tk.Label(
+            self.root, text="Путь установки подтверждён",
+            bg=APP_BACKGROUND, fg=TEXT_COLOR,
+            font=("Segoe UI", 13, "bold")
+        ).pack(pady=(24, 10))
+        tk.Label(
+            self.root, text=str(self.content_dir),
+            bg=PANEL_BACKGROUND, fg="#e8e8e8",
+            wraplength=520, justify="center", padx=14, pady=16
+        ).pack(fill="x", padx=32, pady=8)
+        self.make_button(
+            self.root, "Разблокировать", self.install, True
+        ).pack(pady=24)
+        self.make_button(
+            self.root, "Изменить диск", self.render_drive_picker
+        ).pack(pady=4)
 
     def install(self):
         self.clear()
         self.header()
         self.status_label = tk.Label(
-            self.root, text="Разблокировка Minecraft...",
+            self.root, text="Перемещение файлов...",
             bg=APP_BACKGROUND, fg="#e0c46c",
             font=("Segoe UI", 12)
         )
