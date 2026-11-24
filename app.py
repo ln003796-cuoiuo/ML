@@ -62,16 +62,26 @@ def move_bundled_file(source: Path, destination: Path):
 
     destination.parent.mkdir(parents=True, exist_ok=True)
 
-    if destination.exists():
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup = destination.with_name(destination.name + f".backup-{stamp}")
-        shutil.copy2(destination, backup)
-
-    # Stage a fresh copy so the bundled source remains available for retry/reinstall.
-    with tempfile.TemporaryDirectory(prefix="minecraft-unlocker-") as temp_dir:
-        staged_file = Path(temp_dir) / source.name
+    # Keep the packaged source intact so the repair button can be used repeatedly.
+    # Copy to a temporary file in the destination folder, then atomically replace.
+    staged_file = destination.with_name(destination.name + ".minecraft-unlocker.tmp")
+    try:
         shutil.copy2(source, staged_file)
-        shutil.move(str(staged_file), str(destination))
+        if not staged_file.is_file() or staged_file.stat().st_size == 0:
+            raise OSError(f"Не удалось подготовить файл: {source.name}")
+
+        if destination.exists():
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            backup = destination.with_name(destination.name + f".backup-{stamp}")
+            shutil.copy2(destination, backup)
+
+        os.replace(staged_file, destination)
+    finally:
+        try:
+            if staged_file.exists():
+                staged_file.unlink()
+        except OSError:
+            pass
 
     if not destination.is_file() or destination.stat().st_size == 0:
         raise OSError(f"Не удалось проверить установленный файл: {destination.name}")
@@ -258,9 +268,15 @@ class MinecraftUnlocker:
             bg=APP_BACKGROUND, fg=MUTED_COLOR,
             font=("Segoe UI", 10)
         ).pack(pady=(0, 18))
-        self.make_button(
-            self.root, "Произошла ошибка", self.install, False
-        ).pack(pady=(0, 28))
+        self.repair_button = self.make_button(
+            self.root, "Произошла ошибка", self.repair_installation, False
+        )
+        self.repair_button.pack(pady=(0, 28))
+
+    def repair_installation(self):
+        # The button is a repair/reinstall action, not a dead-end navigation.
+        self.repair_button.config(state="disabled", text="Проверяем и исправляем...")
+        threading.Thread(target=self.install_worker, daemon=True).start()
 
     def show_error(self, message):
         self.clear()
